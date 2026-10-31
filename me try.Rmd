@@ -1,0 +1,161 @@
+---
+title: "me try"
+output: html_document
+date: "2026-10-22"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r Fig1A}
+#Figure 1A (Voxel)
+
+library
+(neurobase)
+
+#Load in a nifti (.nii.gz) file of a standardized template so use as a background. 导入数据集1（标准模板）为背景
+template <- readnii('data/MNI152_T1_1mm_brain.nii.gz') #load the nifti file into R
+
+#Load in a nifti (.nii.gz) file of the statistic you wanted of overlay, with the same dimensions as the template.  导入数据集2为覆盖物
+effect <- readnii("data/MNI152_effect_size.nii.gz") 
+
+#Threshold the statistic map so only values about a specified amount are displayed去除小于0.3的值
+effect[effect<0.3] <- NA 
+
+#Set the breaks/intervals you want on the color bar (e.g. from .3 to .6, by intervals of 0.005)颜色条分隔设置【自定义】
+breaks = seq(.3,.6, by=0.005)
+
+#[Optional] If you want to output the figure as a .png, open a png image device以此路径保持图片【可选】
+png("data/R/fig1aa.png") 
+
+#Use the ortho2 function from the neurobase package to make the figure 用ortho2来画图
+ortho2(x = template,   #Specify the background template 背景底图
+       y = effect,     #Specify the effect you want to overlay on the template 覆盖图
+       crosshairs = F, #Remove the cross-hairs 去/不去十字准星
+       bg = "white",   #Make the background white 背景颜色设置【自定义】
+       NA.x = T,       #Do not display NA values 不显示底图NA
+       col.y= rev(viridis::inferno(n = 500)), #Select the color scale. 刷颜色（配色过度）【自定义】
+#viridis色盲友好包 (可选magma inferno plasma viridis rocket mako turbo )
+       xyz = c(70,50,80), #set the x y & z slice you want to visualize 截取此坐标位置的大脑
+       useRaster = T,     #Sometimes using Raster makes for clearer plots 用栅格化渲染,图边缘更清晰
+       ycolorbar = TRUE,  #Add a color bar加图例
+       mfrow = c(1,1)) +  #layout of brain views (for this figure, we just want a axial view) 是Multi-Frame ROW 的缩写“多图行数”，此表示一行一列，即一张图
+  colorbar(breaks, col = rev(viridis::inferno(n=length(breaks)-1)), #add a color bar with same color scale 图例颜色设置
+           text.col = "black", labels = FALSE, maxleft = 0.85)  #Set the specifications for the color bar 图例字体颜色 字体有无 位置设置
+
+dev.off()
+```
+#总结 1A
+ortho2：更适合逐个坐标精细控制，或需要输出完整三视图的场景。多图输出需借助循环 + par(mfrow)。
+
+```{r setup, include=FALSE}
+#Figure 1B (Voxel)
+
+library
+(neurobase)
+library
+(scales)
+
+#Load in a nifti (.nii.gz) file to use as a background. 读入一个被试的高清结构像（灰白色的脑解剖图）
+t1 <- readnii('data/sub-001__t1_warped.nii.gz') 
+
+#Load in a nifti (.nii.gz) file to use as a overlay. 读入了一个脑图谱文件。著名的 Schaefer 300区脑图谱，里面每个脑区被赋予了一个 1 到 300 的整数标签。
+atlas <-  readnii('data/sub-001_schaefer300n7_aseg_to_dwispace_gm_rois.nii.gz')
+
+png('data/R/fig1bb.png')
+overlay(x=robust_window(t1), y=atlas, #robust_window底图对比度增强。
+        plot.type = "single", #Single view (axial only)单视图
+        z=c(seq(30,110,10)), #set slices you want to view (30 to 110, with a gap of 10 slices).       在z方向切面30-100每隔10切一刀 【自定义】
+        col.y =  alpha(viridis::inferno(300), 0.6),#上色300个层次透明度0.6【自定义-颜色 透明度】
+        plane = "axial", #单视图切面设置水平图（axial coronal sagittal)【自定义】         
+        useRaster = T, 
+        bg = "white",
+        NA.x=T, #Make NA values on overlay transparent底图？叠加图？
+        zlim.y =c(1,300))#颜色图层数值边界
+dev.off()
+```
+
+#总结1B
+overlay：更适合快速批量输出多个轴状/冠状面切片，内部自动处理排版，代码更简洁。
+
+```{r setup, include=FALSE}
+#Figure 1C (Cortical ROI using ciftiTools)
+
+# Load the package 
+library(ciftiTools)
+library(rgl)
+
+#Need connectome workbench to use ciftiTools - set path below 找到connectome workbench[使用自己的路径]
+ciftiTools.setOption("wb_path","D:/AppGallery/workbench-windows64-v2.2.1/workbench/bin_windows64" ) 
+
+#Define CIFTI file names for time series and surface files. 读入左右脑表面数据nii格式和大脑时间序列数据cifti格式
+cifti_fname <- ciftiTools::ciftiTools.files()$cifti["dtseries"]
+surfL_fname <- ciftiTools.files()$surf["left"]
+surfR_fname <- ciftiTools.files()$surf["right"]
+
+# Read in CIFTI file数据一起放进cii
+cii <- read_cifti(
+  cifti_fname, brainstructures="all", 
+  surfL_fname=surfL_fname,
+  surfR_fname=surfR_fname)
+
+set.seed(1993) #set a random seed (good practice for reproducibility)数字伪随机生成
+
+parc <- load_parc("Schaefer_400") #ciftitools has a few atlas in cifti format already included 载入大脑图谱（Parcllelation）Schaefer_400把大脑皮层划分成了 400 个区域
+
+ramdom_metric <- rnorm(400) #generate random data to plot on cortex 生成 400 个随机数（正负数都有）
+
+cii <- move_from_mwall(cii, NA) #大脑左右半球贴在一起的地方，是没有皮层的（叫内侧壁 Medial Wall）。这行代码把那些“没有脑区”的地方的值，统统变成NA（空白），免得后面画图时那里出现奇怪的颜色。
+
+parc_vec <- c(as.matrix(parc)) #一维化    as.matrix()：把它变成一张标准的二维网格纸 c() 是 R 语言里的 Combine（合并）函数。在R里，它有一个非常“暴力”的特性：不管里面是什么，它都会给你拍扁。
+
+xii_metric <- c(NA, ramdom_metric)[parc_vec + 1] #编号1（0+1=1）对应NA编号2对应...
+
+xii1 <- select_xifti(cii, 1)#抽取4D脑影像（cii)的第一个时间节点数据当底膜
+
+xii_metric <- newdata_xifti(xii1, xii_metric)
+#给xii1分配颜色数据xii_metric,并依旧命名为xii_metric
+
+view_xifti_surface(xii_metric, 
+                   colors = viridis::viridis(n = 400), 
+                   borders = "black", #400个脑区边界画上黑线
+                   hemisphere = "both",#左右脑都画出来
+                   view = 'lateral')#视角选择外侧面
+#渲染3Dd大脑
+
+rgl.snapshot("data/R/fig1cc.png")
+
+rgl.close()
+```
+#总结1C
+
+```{r Fig1D, eval=FALSE}
+#Figure 1D (Subcortical ROI using ggseg)
+
+library(ggseg)
+library(ggplot2)
+
+sub_base_atlas <- as.data.frame(na.omit(cbind(aseg$data$region, aseg$data$hemi)))
+
+colnames(sub_base_atlas) <- c("region", "hemi")
+
+Effect <- rnorm(dim(sub_base_atlas)[1])
+
+sub_base_atlas <- cbind(Effect, sub_base_atlas)
+subcortex <- ggseg(atlas = aseg,
+                   .data = sub_base_atlas,
+                   mapping=aes(fill=Effect), 
+                   position = "dispersed",
+                   colour="black",
+                   hemi =c('left', 'right'),
+                   size=.2,
+                   show.legend = T, 
+                   plot.background = "white") + 
+  scale_fill_viridis_b() +
+  theme(legend.text=element_text(size=15),
+        legend.title  = element_blank())
+
+ggsave(filename = 'data/R/fig1d.png', plot = subcortex, device = 'png', bg = 'white')
+```
+
